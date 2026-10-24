@@ -26,7 +26,7 @@ class MainActivity : Activity() {
     private var currentTab = "tasks"
 
     data class Task(val id: Long, val title: String, val subject: String, val due: String, var done: Boolean)
-    data class Subject(val name: String, var attended: Int, var total: Int)
+    data class Subject(val name: String, var attended: Int, var total: Int, val history: MutableList<Boolean> = mutableListOf())
 
     private val ink = Color.rgb(28, 37, 54)
     private val muted = Color.rgb(105, 116, 135)
@@ -282,18 +282,25 @@ class MainActivity : Activity() {
                     setPadding(0, dp(12), 0, 0)
                 }
                 buttons.addView(smallButton("Present", green) {
-                    subject.total += 1; subject.attended += 1; saveData(); render()
+                    subject.total += 1; subject.attended += 1; subject.history.add(true); saveData(); render()
                 }, LinearLayout.LayoutParams(0, dp(40), 1f))
                 buttons.addView(View(this), LinearLayout.LayoutParams(dp(8), 1))
                 buttons.addView(smallButton("Absent", Color.rgb(190, 76, 76)) {
-                    subject.total += 1; saveData(); render()
+                    subject.total += 1; subject.history.add(false); saveData(); render()
                 }, LinearLayout.LayoutParams(0, dp(40), 1f))
                 buttons.addView(View(this), LinearLayout.LayoutParams(dp(8), 1))
                 buttons.addView(smallButton("Undo", muted) {
                     if (subject.total > 0) {
-                        if (subject.attended == subject.total) subject.attended -= 1
-                        subject.total -= 1
-                        if (subject.attended > subject.total) subject.attended = subject.total
+                        if (subject.history.isNotEmpty()) {
+                            val lastWasPresent = subject.history.removeAt(subject.history.lastIndex)
+                            if (lastWasPresent) subject.attended = (subject.attended - 1).coerceAtLeast(0)
+                            subject.total = (subject.total - 1).coerceAtLeast(0)
+                        } else {
+                            // Legacy saved data has no action history, so retain the safest available fallback.
+                            if (subject.attended == subject.total) subject.attended = (subject.attended - 1).coerceAtLeast(0)
+                            subject.total = (subject.total - 1).coerceAtLeast(0)
+                            if (subject.attended > subject.total) subject.attended = subject.total
+                        }
                         saveData(); render()
                     }
                 }, LinearLayout.LayoutParams(0, dp(40), 0.75f))
@@ -422,7 +429,12 @@ class MainActivity : Activity() {
             val subjectArray = JSONArray(prefs.getString("subjects", "[]"))
             for (i in 0 until subjectArray.length()) {
                 val o = subjectArray.getJSONObject(i)
-                subjects.add(Subject(o.optString("name"), o.optInt("attended"), o.optInt("total")))
+                val historyArray = o.optJSONArray("history")
+                val history = mutableListOf<Boolean>()
+                if (historyArray != null) {
+                    for (j in 0 until historyArray.length()) history.add(historyArray.optBoolean(j))
+                }
+                subjects.add(Subject(o.optString("name"), o.optInt("attended"), o.optInt("total"), history))
             }
         } catch (_: Exception) {
             tasks.clear(); subjects.clear()
@@ -437,8 +449,11 @@ class MainActivity : Activity() {
         }
         val subjectArray = JSONArray()
         subjects.forEach { subject ->
+            val historyArray = JSONArray()
+            subject.history.forEach { historyArray.put(it) }
             subjectArray.put(JSONObject().put("name", subject.name)
-                .put("attended", subject.attended).put("total", subject.total))
+                .put("attended", subject.attended).put("total", subject.total)
+                .put("history", historyArray))
         }
         prefs.edit().putString("tasks", taskArray.toString())
             .putString("subjects", subjectArray.toString()).apply()
