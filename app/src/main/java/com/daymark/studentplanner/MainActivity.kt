@@ -238,7 +238,8 @@ class MainActivity : Activity() {
         }
         dialog.show()
     }
-\n    private fun renderTasks() {
+
+    private fun renderTasks() {
         sectionHeading("Today's focus", "Add a task and tick it off when done.")
         val add = actionButton("+  Add task") { showAddTaskDialog() }
         content.addView(add, matchWrap())
