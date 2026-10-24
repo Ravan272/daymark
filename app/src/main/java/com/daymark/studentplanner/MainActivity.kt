@@ -26,7 +26,7 @@ class MainActivity : Activity() {
     private var currentTab = "tasks"
 
     data class Task(val id: Long, val title: String, val subject: String, val due: String, var done: Boolean)
-    data class Subject(val name: String, var attended: Int, var total: Int)
+    data class Subject(val name: String, var attended: Int, var total: Int, val history: MutableList<Boolean> = mutableListOf())
 
     private val ink = Color.rgb(28, 37, 54)
     private val muted = Color.rgb(105, 116, 135)
@@ -282,19 +282,22 @@ class MainActivity : Activity() {
                     setPadding(0, dp(12), 0, 0)
                 }
                 buttons.addView(smallButton("Present", green) {
-                    subject.total += 1; subject.attended += 1; saveData(); render()
+                    subject.total += 1; subject.attended += 1; subject.history.add(true); saveData(); render()
                 }, LinearLayout.LayoutParams(0, dp(40), 1f))
                 buttons.addView(View(this), LinearLayout.LayoutParams(dp(8), 1))
                 buttons.addView(smallButton("Absent", Color.rgb(190, 76, 76)) {
-                    subject.total += 1; saveData(); render()
+                    subject.total += 1; subject.history.add(false); saveData(); render()
                 }, LinearLayout.LayoutParams(0, dp(40), 1f))
                 buttons.addView(View(this), LinearLayout.LayoutParams(dp(8), 1))
                 buttons.addView(smallButton("Undo", muted) {
-                    if (subject.total > 0) {
-                        if (subject.attended == subject.total) subject.attended -= 1
-                        subject.total -= 1
-                        if (subject.attended > subject.total) subject.attended = subject.total
+                    if (subject.history.isNotEmpty()) {
+                        val wasPresent = subject.history.removeAt(subject.history.lastIndex)
+                        subject.total = (subject.total - 1).coerceAtLeast(0)
+                        if (wasPresent) subject.attended = (subject.attended - 1).coerceAtLeast(0)
+                        subject.attended = subject.attended.coerceAtMost(subject.total)
                         saveData(); render()
+                    } else {
+                        Toast.makeText(this@MainActivity, "No recorded action to undo.", Toast.LENGTH_SHORT).show()
                     }
                 }, LinearLayout.LayoutParams(0, dp(40), 0.75f))
                 item.addView(buttons)
@@ -413,19 +416,47 @@ class MainActivity : Activity() {
     }
 
     private fun loadData() {
+        // Load each collection independently so one damaged preference does not
+        // make the other collection disappear from the app.
         try {
             val taskArray = JSONArray(prefs.getString("tasks", "[]"))
             for (i in 0 until taskArray.length()) {
                 val o = taskArray.getJSONObject(i)
-                tasks.add(Task(o.optLong("id"), o.optString("title"), o.optString("subject"), o.optString("due"), o.optBoolean("done")))
+                val title = o.optString("title").trim()
+                if (title.isNotEmpty()) {
+                    tasks.add(Task(
+                        o.optLong("id", System.currentTimeMillis() + i),
+                        title,
+                        o.optString("subject"),
+                        o.optString("due"),
+                        o.optBoolean("done")
+                    ))
+                }
             }
+        } catch (_: Exception) {
+            // Keep any valid tasks already recovered; do not touch subjects.
+        }
+
+        try {
             val subjectArray = JSONArray(prefs.getString("subjects", "[]"))
             for (i in 0 until subjectArray.length()) {
                 val o = subjectArray.getJSONObject(i)
-                subjects.add(Subject(o.optString("name"), o.optInt("attended"), o.optInt("total")))
+                val name = o.optString("name").trim()
+                if (name.isNotEmpty()) {
+                    val total = o.optInt("total").coerceAtLeast(0)
+                    val attended = o.optInt("attended").coerceIn(0, total)
+                    val historyArray = o.optJSONArray("history")
+                    val history = mutableListOf<Boolean>()
+                    if (historyArray != null) {
+                        for (j in 0 until historyArray.length()) {
+                            history.add(historyArray.optBoolean(j, false))
+                        }
+                    }
+                    subjects.add(Subject(name, attended, total, history))
+                }
             }
         } catch (_: Exception) {
-            tasks.clear(); subjects.clear()
+            // Keep any valid subjects already recovered; do not touch tasks.
         }
     }
 
@@ -437,8 +468,11 @@ class MainActivity : Activity() {
         }
         val subjectArray = JSONArray()
         subjects.forEach { subject ->
+            val historyArray = JSONArray()
+            subject.history.forEach { historyArray.put(it) }
             subjectArray.put(JSONObject().put("name", subject.name)
-                .put("attended", subject.attended).put("total", subject.total))
+                .put("attended", subject.attended).put("total", subject.total)
+                .put("history", historyArray))
         }
         prefs.edit().putString("tasks", taskArray.toString())
             .putString("subjects", subjectArray.toString()).apply()
