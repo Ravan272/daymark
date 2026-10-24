@@ -501,7 +501,9 @@ class MainActivity : Activity() {
                 val o = taskArray.getJSONObject(i)
                 tasks.add(Task(o.optLong("id"), o.optString("title"), o.optString("subject"), o.optString("due"), o.optBoolean("done")))
             }
-            val classArray = JSONArray(prefs.getString("timetable", "[]"))\n            for (i in 0 until classArray.length()) { val o = classArray.getJSONObject(i); timetable.add(CollegeClass(o.optLong("id"), o.optInt("day"), o.optString("subject"), o.optString("start"), o.optString("end"), o.optString("teacher"), o.optString("room"), o.optString("batch"), o.optString("attendance"))) }\n            val subjectArray = JSONArray(prefs.getString("subjects", "[]"))
+            val classArray = JSONArray(prefs.getString("timetable", "[]"))
+            for (i in 0 until classArray.length()) { val o = classArray.getJSONObject(i); timetable.add(CollegeClass(o.optLong("id"), o.optInt("day"), o.optString("subject"), o.optString("start"), o.optString("end"), o.optString("teacher"), o.optString("room"), o.optString("batch"), o.optString("attendance"))) }
+            val subjectArray = JSONArray(prefs.getString("subjects", "[]"))
             for (i in 0 until subjectArray.length()) {
                 val o = subjectArray.getJSONObject(i)
                 val historyArray = o.optJSONArray("history")
@@ -530,8 +532,10 @@ class MainActivity : Activity() {
                 .put("attended", subject.attended).put("total", subject.total)
                 .put("history", historyArray))
         }
+        val classArray = JSONArray()
+        timetable.forEach { cl -> classArray.put(JSONObject().put("id", cl.id).put("day", cl.day).put("subject", cl.subject).put("start", cl.start).put("end", cl.end).put("teacher", cl.teacher).put("room", cl.room).put("batch", cl.batch).put("attendance", cl.attendance)) }
         prefs.edit().putString("tasks", taskArray.toString())
-            .putString("subjects", subjectArray.toString()).apply()
+            .putString("subjects", subjectArray.toString()).putString("timetable", classArray.toString()).apply()
     }
 
     private fun rounded(color: Int, radius: Int): GradientDrawable =
