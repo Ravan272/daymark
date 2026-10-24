@@ -26,8 +26,9 @@ class MainActivity : Activity() {
     private var currentTab = "calendar"
     private val timetable = mutableListOf<CollegeClass>()
     private var selectedDay = java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_WEEK)
-    private val studentBatch = "IT1"
-    data class CollegeClass(val id: Long, val day: Int, val subject: String, val start: String, val end: String, val teacher: String, val room: String, val batch: String, var attendance: String = "")
+    private var studentBatch = "IT1"
+    private var rollNumber = "266020"
+    data class CollegeClass(val id: Long, var day: Int, var subject: String, var start: String, var end: String, var teacher: String, var room: String, var batch: String, var attendance: String = "")
 
     data class Task(val id: Long, val title: String, val subject: String, val due: String, var done: Boolean)
     data class Subject(val name: String, var attended: Int, var total: Int, val history: MutableList<Boolean> = mutableListOf())
@@ -42,6 +43,8 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         loadData()
+        rollNumber = prefs.getString("rollNumber", "266020") ?: "266020"
+        studentBatch = prefs.getString("studentBatch", "IT1") ?: "IT1"
         buildShell()
         render()
     }
@@ -159,7 +162,7 @@ class MainActivity : Activity() {
         val open = tasks.count { !it.done }
         summary.text = when (currentTab) {
             "tasks" -> "$open task${if (open == 1) "" else "s"} left to focus on"
-            "calendar" -> "Roll 266020 • Batch IT1 • Weekly timetable"
+            "calendar" -> "Roll $rollNumber • Batch $studentBatch • Weekly timetable"
             else -> {
                 val pct = if (subjects.sumOf { it.total } == 0) 0 else subjects.sumOf { it.attended } * 100 / subjects.sumOf { it.total }
                 "$pct% overall attendance • keep your progress visible"
@@ -171,7 +174,8 @@ class MainActivity : Activity() {
 
 
     private fun renderCalendar() {
-        sectionHeading("College calendar", "Weekly timetable • Roll 266020 • Batch IT1")
+        sectionHeading("College calendar", "Weekly timetable • Roll $rollNumber • Batch $studentBatch")
+        content.addView(actionButton("Edit student profile") { showProfileDialog() }, matchWrap())
         val days = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
         val dayRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         days.forEachIndexed { index, label ->
@@ -211,9 +215,55 @@ class MainActivity : Activity() {
                 }
             }
             box.addView(mark)
+            box.setOnLongClickListener {
+                AlertDialog.Builder(this@MainActivity).setTitle(cl.subject)
+                    .setItems(arrayOf("Edit class", "Delete class")) { _, choice ->
+                        if (choice == 0) showEditClassDialog(cl)
+                        else AlertDialog.Builder(this@MainActivity).setTitle("Delete class?").setMessage(cl.subject + " • " + cl.start + "–" + cl.end)
+                            .setNegativeButton("Cancel", null).setPositiveButton("Delete") { _, _ -> timetable.remove(cl); saveData(); render() }.show()
+                    }.show()
+                true
+            }
             val lp = matchWrap(); lp.topMargin = dp(8); content.addView(box, lp)
         }
-        content.addView(TextView(this).apply { text = "Tip: add each theory slot and practical slot once. Batch is set to IT1 for roll 266020."; textSize = 12f; setTextColor(muted); setPadding(dp(2), dp(12), dp(2), dp(8)) })
+        content.addView(TextView(this).apply { text = "Tap a class to mark attendance. Long-press a class to edit or delete it. Your profile and timetable are editable."; textSize = 12f; setTextColor(muted); setPadding(dp(2), dp(12), dp(2), dp(8)) })
+    }
+
+    private fun showProfileDialog() {
+        val form = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(6), dp(20), 0) }
+        val roll = EditText(this).apply { hint = "Roll number"; setText(rollNumber); isSingleLine = true }
+        val batches = listOf("IT1", "IT2", "IT3")
+        val batch = Spinner(this).apply { adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, batches); setSelection(batches.indexOf(studentBatch).coerceAtLeast(0)) }
+        form.addView(roll, matchWrap()); form.addView(batch, matchWrap())
+        AlertDialog.Builder(this).setTitle("Student profile").setView(form).setNegativeButton("Cancel", null)
+            .setPositiveButton("Save") { _, _ ->
+                if (roll.text.toString().trim().isNotEmpty()) rollNumber = roll.text.toString().trim()
+                studentBatch = batch.selectedItem.toString()
+                prefs.edit().putString("rollNumber", rollNumber).putString("studentBatch", studentBatch).apply()
+                render()
+            }.show()
+    }
+
+    private fun showEditClassDialog(cl: CollegeClass) {
+        val form = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(4), dp(18), 0) }
+        val dayNames = listOf("Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday")
+        val day = Spinner(this).apply { adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, dayNames); setSelection(when (cl.day) { 2 -> 0; 3 -> 1; 4 -> 2; 5 -> 3; 6 -> 4; 7 -> 5; else -> 6 }) }
+        val subject = EditText(this).apply { setText(cl.subject); hint = "Subject code/name"; isSingleLine = true }
+        val start = EditText(this).apply { setText(cl.start); hint = "Start time"; isSingleLine = true }
+        val end = EditText(this).apply { setText(cl.end); hint = "End time"; isSingleLine = true }
+        val teacher = EditText(this).apply { setText(cl.teacher); hint = "Teacher code"; isSingleLine = true }
+        val room = EditText(this).apply { setText(cl.room); hint = "Room / lab"; isSingleLine = true }
+        val batchNames = listOf("Lecture / all batches", "IT1", "IT2", "IT3")
+        val batch = Spinner(this).apply { adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, batchNames); setSelection(when (cl.batch) { "IT1" -> 1; "IT2" -> 2; "IT3" -> 3; else -> 0 }) }
+        listOf<View>(day, subject, start, end, teacher, room, batch).forEach { form.addView(it, matchWrap()) }
+        AlertDialog.Builder(this).setTitle("Edit timetable slot").setView(form).setNegativeButton("Cancel", null)
+            .setPositiveButton("Save") { _, _ ->
+                cl.day = when (day.selectedItemPosition) { 0 -> 2; 1 -> 3; 2 -> 4; 3 -> 5; 4 -> 6; 5 -> 7; else -> 1 }
+                cl.subject = subject.text.toString().trim(); cl.start = start.text.toString().trim(); cl.end = end.text.toString().trim()
+                cl.teacher = teacher.text.toString().trim(); cl.room = room.text.toString().trim()
+                cl.batch = when (batch.selectedItemPosition) { 1 -> "IT1"; 2 -> "IT2"; 3 -> "IT3"; else -> "ALL" }
+                selectedDay = cl.day; saveData(); render()
+            }.show()
     }
 
     private fun showAddClassDialog() {
