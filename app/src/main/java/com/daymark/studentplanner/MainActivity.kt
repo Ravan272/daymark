@@ -23,7 +23,11 @@ class MainActivity : Activity() {
     private lateinit var root: LinearLayout
     private lateinit var content: LinearLayout
     private lateinit var summary: TextView
-    private var currentTab = "tasks"
+    private var currentTab = "calendar"
+    private val timetable = mutableListOf<CollegeClass>()
+    private var selectedDay = java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_WEEK)
+    private val studentBatch = "IT1"
+    data class CollegeClass(val id: Long, val day: Int, val subject: String, val start: String, val end: String, val teacher: String, val room: String, val batch: String, var attendance: String = "")
 
     data class Task(val id: Long, val title: String, val subject: String, val due: String, var done: Boolean)
     data class Subject(val name: String, var attended: Int, var total: Int, val history: MutableList<Boolean> = mutableListOf())
@@ -102,6 +106,8 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, dp(18), 0, dp(12))
         }
+        tabs.addView(tabButton("Calendar", "calendar"), LinearLayout.LayoutParams(0, dp(46), 1f))
+        tabs.addView(View(this), LinearLayout.LayoutParams(dp(6), 1))
         tabs.addView(tabButton("Tasks", "tasks"), LinearLayout.LayoutParams(0, dp(46), 1f))
         val gap = View(this)
         tabs.addView(gap, LinearLayout.LayoutParams(dp(10), 1))
@@ -139,7 +145,7 @@ class MainActivity : Activity() {
                     for (i in 0 until row.childCount) {
                         val child = row.getChildAt(i)
                         if (child is TextView) {
-                            val selected = child.text.toString() == if (currentTab == "tasks") "Tasks" else "Attendance"
+                            val selected = child.text.toString() == when (currentTab) { "calendar" -> "Calendar"; "tasks" -> "Tasks"; else -> "Attendance" }
                             child.setTextColor(if (selected) Color.WHITE else ink)
                             child.background = rounded(if (selected) accent else Color.WHITE, 14)
                         }
@@ -158,10 +164,79 @@ class MainActivity : Activity() {
             "$pct% overall attendance • keep your progress visible"
         }
         content.removeAllViews()
-        if (currentTab == "tasks") renderTasks() else renderAttendance()
+        when (currentTab) { "calendar" -> renderCalendar(); "tasks" -> renderTasks(); else -> renderAttendance() }
     }
 
-    private fun renderTasks() {
+
+    private fun renderCalendar() {
+        sectionHeading("College calendar", "Weekly timetable • Roll 266020 • Batch IT1")
+        val days = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+        val dayRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        days.forEachIndexed { index, label ->
+            val calendarDay = index + 2
+            val actualDay = if (calendarDay == 8) 1 else calendarDay
+            val b = TextView(this).apply {
+                text = label; gravity = Gravity.CENTER; textSize = 12f; typeface = Typeface.DEFAULT_BOLD
+                setTextColor(if (selectedDay == actualDay) Color.WHITE else ink)
+                background = rounded(if (selectedDay == actualDay) accent else Color.WHITE, 10)
+                setPadding(0, dp(12), 0, dp(12))
+                setOnClickListener { selectedDay = actualDay; render() }
+            }
+            val lp = LinearLayout.LayoutParams(0, -2, 1f); lp.setMargins(dp(2), 0, dp(2), dp(8))
+            dayRow.addView(b, lp)
+        }
+        content.addView(dayRow)
+        val dayName = when (selectedDay) { 1 -> "Sunday"; 2 -> "Monday"; 3 -> "Tuesday"; 4 -> "Wednesday"; 5 -> "Thursday"; 6 -> "Friday"; else -> "Saturday" }
+        content.addView(TextView(this).apply { text = dayName; textSize = 18f; typeface = Typeface.DEFAULT_BOLD; setTextColor(ink); setPadding(0, dp(4), 0, dp(10)) })
+        content.addView(actionButton("+ Add lecture / practical") { showAddClassDialog() }, matchWrap())
+        val classes = timetable.filter { it.day == selectedDay && (it.batch.isBlank() || it.batch.equals(studentBatch, true) || it.batch.equals("ALL", true)) }.sortedBy { it.start }
+        if (classes.isEmpty()) emptyCard("No timetable entries yet", "Add your lecture or practical slots. Only IT1 practicals will show for your batch.")
+        classes.forEach { cl ->
+            val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; background = rounded(card, 15); setPadding(dp(14), dp(13), dp(14), dp(13)) }
+            box.addView(TextView(this).apply { text = "${cl.start} – ${cl.end}"; textSize = 13f; setTextColor(accent); typeface = Typeface.DEFAULT_BOLD })
+            box.addView(TextView(this).apply { text = cl.subject; textSize = 17f; setTextColor(ink); typeface = Typeface.DEFAULT_BOLD; setPadding(0, dp(4), 0, dp(2)) })
+            box.addView(TextView(this).apply { text = listOf(cl.teacher.ifBlank { "Teacher not set" }, cl.room.ifBlank { "Room not set" }, cl.batch.ifBlank { "Lecture" }).joinToString(" • "); textSize = 12f; setTextColor(muted) })
+            val mark = TextView(this).apply {
+                text = if (cl.attendance.isBlank()) "Attendance: Not marked  ·  Tap to mark" else "Attendance: ${cl.attendance}  ·  Tap to edit"
+                textSize = 13f; typeface = Typeface.DEFAULT_BOLD; setTextColor(if (cl.attendance == "Present") green else if (cl.attendance == "Absent") Color.rgb(190,76,76) else accent)
+                setPadding(0, dp(12), 0, 0)
+                setOnClickListener {
+                    val options = arrayOf("Present", "Absent", "Not marked")
+                    AlertDialog.Builder(this@MainActivity).setTitle("Attendance • ${cl.subject}").setItems(options) { _, which ->
+                        cl.attendance = if (which == 2) "" else options[which]
+                        saveData(); render()
+                    }.show()
+                }
+            }
+            box.addView(mark)
+            val lp = matchWrap(); lp.topMargin = dp(8); content.addView(box, lp)
+        }
+        content.addView(TextView(this).apply { text = "Tip: add each theory slot and practical slot once. Batch is set to IT1 for roll 266020."; textSize = 12f; setTextColor(muted); setPadding(dp(2), dp(12), dp(2), dp(8)) })
+    }
+
+    private fun showAddClassDialog() {
+        val form = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(4), dp(18), 0) }
+        val day = Spinner(this).apply { adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf("Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday")); setSelection((selectedDay + 5) % 7) }
+        val subject = EditText(this).apply { hint = "Subject code/name (e.g. HBMT)" }
+        val start = EditText(this).apply { hint = "Start time (e.g. 10:00)" }
+        val end = EditText(this).apply { hint = "End time (e.g. 11:00)" }
+        val teacher = EditText(this).apply { hint = "Teacher code (e.g. JMK)" }
+        val room = EditText(this).apply { hint = "Room / lab (e.g. FF58)" }
+        val batch = Spinner(this).apply { adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf("Lecture / all batches", "IT1", "IT2", "IT3")) }
+        listOf<View>(day, subject, start, end, teacher, room, batch).forEach { form.addView(it, matchWrap()) }
+        val dialog = AlertDialog.Builder(this).setTitle("Add timetable slot").setView(form).setNegativeButton("Cancel", null).setPositiveButton("Save", null).create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                if (subject.text.isBlank() || start.text.isBlank() || end.text.isBlank()) { subject.error = if (subject.text.isBlank()) "Required" else null; start.error = if (start.text.isBlank()) "Required" else null; end.error = if (end.text.isBlank()) "Required" else null; return@setOnClickListener }
+                val dayNum = when (day.selectedItemPosition) { 0 -> 2; 1 -> 3; 2 -> 4; 3 -> 5; 4 -> 6; 5 -> 7; else -> 1 }
+                val batchValue = when (batch.selectedItemPosition) { 1 -> "IT1"; 2 -> "IT2"; 3 -> "IT3"; else -> "ALL" }
+                timetable.add(CollegeClass(System.currentTimeMillis(), dayNum, subject.text.toString().trim(), start.text.toString().trim(), end.text.toString().trim(), teacher.text.toString().trim(), room.text.toString().trim(), batchValue))
+                selectedDay = dayNum; saveData(); dialog.dismiss(); render()
+            }
+        }
+        dialog.show()
+    }
+\n    private fun renderTasks() {
         sectionHeading("Today's focus", "Add a task and tick it off when done.")
         val add = actionButton("+  Add task") { showAddTaskDialog() }
         content.addView(add, matchWrap())
@@ -426,7 +501,7 @@ class MainActivity : Activity() {
                 val o = taskArray.getJSONObject(i)
                 tasks.add(Task(o.optLong("id"), o.optString("title"), o.optString("subject"), o.optString("due"), o.optBoolean("done")))
             }
-            val subjectArray = JSONArray(prefs.getString("subjects", "[]"))
+            val classArray = JSONArray(prefs.getString("timetable", "[]"))\n            for (i in 0 until classArray.length()) { val o = classArray.getJSONObject(i); timetable.add(CollegeClass(o.optLong("id"), o.optInt("day"), o.optString("subject"), o.optString("start"), o.optString("end"), o.optString("teacher"), o.optString("room"), o.optString("batch"), o.optString("attendance"))) }\n            val subjectArray = JSONArray(prefs.getString("subjects", "[]"))
             for (i in 0 until subjectArray.length()) {
                 val o = subjectArray.getJSONObject(i)
                 val historyArray = o.optJSONArray("history")
