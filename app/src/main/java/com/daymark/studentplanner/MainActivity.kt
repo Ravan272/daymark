@@ -157,11 +157,13 @@ class MainActivity : Activity() {
 
     private fun render() {
         val open = tasks.count { !it.done }
-        summary.text = if (currentTab == "tasks") {
-            "$open task${if (open == 1) "" else "s"} left to focus on"
-        } else {
-            val pct = if (subjects.sumOf { it.total } == 0) 0 else subjects.sumOf { it.attended } * 100 / subjects.sumOf { it.total }
-            "$pct% overall attendance • keep your progress visible"
+        summary.text = when (currentTab) {
+            "tasks" -> "$open task${if (open == 1) "" else "s"} left to focus on"
+            "calendar" -> "Roll 266020 • Batch IT1 • Weekly timetable"
+            else -> {
+                val pct = if (subjects.sumOf { it.total } == 0) 0 else subjects.sumOf { it.attended } * 100 / subjects.sumOf { it.total }
+                "$pct% overall attendance • keep your progress visible"
+            }
         }
         content.removeAllViews()
         when (currentTab) { "calendar" -> renderCalendar(); "tasks" -> renderTasks(); else -> renderAttendance() }
@@ -514,7 +516,7 @@ class MainActivity : Activity() {
                 subjects.add(Subject(o.optString("name"), o.optInt("attended"), o.optInt("total"), history))
             }
         } catch (_: Exception) {
-            tasks.clear(); subjects.clear()
+            tasks.clear(); subjects.clear(); timetable.clear()
         }
     }
 
